@@ -30,6 +30,7 @@ public final class Sqlite {
     )
   }
 
+  @discardableResult
   public func run(_ sql: String, _ bindings: [Datatype]) throws -> [[Datatype]] {
     var stmt: OpaquePointer?
     try self.validate(sqlite3_prepare_v2(self.handle, sql, -1, &stmt, nil))
