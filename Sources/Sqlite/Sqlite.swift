@@ -30,8 +30,7 @@ public final class Sqlite {
     )
   }
 
-  @discardableResult
-  public func run(_ sql: String, _ bindings: Datatype...) throws -> [[Datatype]] {
+  public func run(_ sql: String, _ bindings: [Datatype]) throws -> [[Datatype]] {
     var stmt: OpaquePointer?
     try self.validate(sqlite3_prepare_v2(self.handle, sql, -1, &stmt, nil))
     defer { sqlite3_finalize(stmt) }
@@ -74,6 +73,11 @@ public final class Sqlite {
     return rows
   }
 
+  @discardableResult
+  public func run(_ sql: String, _ bindings: Datatype...) throws -> [[Datatype]] {
+    try self.run(sql, bindings)
+  }
+
   public var lastInsertRowid: Int64 {
     sqlite3_last_insert_rowid(self.handle)
   }
@@ -104,4 +108,41 @@ extension Sqlite.Error {
     self.code = code
     self.description = String(cString: sqlite3_errstr(code))
   }
+}
+
+extension Sqlite.Datatype {
+
+  public var blobValue: [UInt8]? {
+    guard case let .blob(value) = self else {
+      return nil
+    }
+
+    return value
+  }
+
+  public var integerValue: Int64? {
+    guard case let .integer(value) = self else {
+      return nil
+    }
+
+    return value
+  }
+
+  public var realValue: Double? {
+    guard case let .real(value) = self else {
+      return nil
+    }
+
+    return value
+  }
+
+  public var textValue: String? {
+    guard case let .text(value) = self else {
+      return nil
+    }
+
+    return value
+  }
+
+  public var isNull: Bool { self == .null }
 }
