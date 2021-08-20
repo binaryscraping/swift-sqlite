@@ -1,3 +1,5 @@
+import Foundation
+
 #if os(Linux)
   import Csqlite3
 #else
@@ -46,7 +48,10 @@ public final class Sqlite {
       case let .text(value):
         try self.validate(sqlite3_bind_text(stmt, idx, value, -1, SQLITE_TRANSIENT))
       case let .blob(value):
-        try self.validate(sqlite3_bind_blob(stmt, idx, value, -1, SQLITE_TRANSIENT))
+        try value.withUnsafeBytes {
+          _ = try self.validate(
+            sqlite3_bind_blob(stmt, idx, $0.baseAddress, Int32($0.count), SQLITE_TRANSIENT))
+        }
       }
     }
     let cols = sqlite3_column_count(stmt)
@@ -56,7 +61,11 @@ public final class Sqlite {
         try (0..<cols).map { idx -> Datatype in
           switch sqlite3_column_type(stmt, idx) {
           case SQLITE_BLOB:
-            return .blob(sqlite3_column_blob(stmt, idx).load(as: [UInt8].self))
+            if let bytes = sqlite3_column_blob(stmt, idx) {
+              let count = Int(sqlite3_column_bytes(stmt, idx))
+              return .blob(Data(bytes: bytes, count: count))
+            }
+            return .blob(Data())
           case SQLITE_FLOAT:
             return .real(sqlite3_column_double(stmt, idx))
           case SQLITE_INTEGER:
@@ -91,7 +100,7 @@ public final class Sqlite {
   }
 
   public enum Datatype: Equatable {
-    case blob([UInt8])
+    case blob(Data)
     case integer(Int64)
     case null
     case real(Double)
@@ -113,7 +122,7 @@ extension Sqlite.Error {
 
 extension Sqlite.Datatype {
 
-  public var blobValue: [UInt8]? {
+  public var blobValue: Data? {
     guard case let .blob(value) = self else {
       return nil
     }
