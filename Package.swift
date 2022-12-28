@@ -13,14 +13,14 @@ let package = Package(
     .library(
       name: "Sqlite",
       targets: ["Sqlite"]
-    )
+    ),
   ],
   dependencies: [],
   targets: [
     .target(
       name: "Sqlite",
       dependencies: [
-        .target(name: "Csqlite3")
+        .target(name: "Csqlite3"),
       ]
     ),
     .testTarget(
