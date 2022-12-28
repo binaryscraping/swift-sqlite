@@ -10,7 +10,7 @@ private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.sel
 
 public final class SQLite {
   private let queue = DispatchQueue(label: "co.binaryscraping.sqlite")
-  public private(set) var handle: OpaquePointer?
+  private var handle: OpaquePointer?
 
   /// Initialize an ``SQLite`` connection to a database at specified `path`.
   /// - Parameter path: path to the `.sqlite` database file.
@@ -31,47 +31,48 @@ public final class SQLite {
   }
 
   deinit {
-    sqlite3_close_v2(self.handle)
+    sqlite3_close_v2(handle)
   }
 
   public func execute(_ sql: String) throws {
     try queue.sync {
       _ = try self.validate(
-        sqlite3_exec(self.handle, sql, nil, nil, nil)
+        sqlite3_exec(handle, sql, nil, nil, nil)
       )
     }
   }
 
   @discardableResult
-  public func execute(_ sql: String, _ bindings: [Datatype]) throws -> [Row] {
+  public func execute(_ sql: String, _ bindings: [DataType]) throws -> [Row] {
     try queue.sync {
       var stmt: OpaquePointer?
-      try self.validate(sqlite3_prepare_v2(self.handle, sql, -1, &stmt, nil))
+      try validate(sqlite3_prepare_v2(handle, sql, -1, &stmt, nil))
       defer { sqlite3_finalize(stmt) }
       for (idx, binding) in zip(Int32(1)..., bindings) {
         switch binding {
         case .null:
-          try self.validate(sqlite3_bind_null(stmt, idx))
+          try validate(sqlite3_bind_null(stmt, idx))
         case let .integer(value):
-          try self.validate(sqlite3_bind_int64(stmt, idx, value))
+          try validate(sqlite3_bind_int64(stmt, idx, value))
         case let .real(value):
-          try self.validate(sqlite3_bind_double(stmt, idx, value))
+          try validate(sqlite3_bind_double(stmt, idx, value))
         case let .text(value):
-          try self.validate(sqlite3_bind_text(stmt, idx, value, -1, SQLITE_TRANSIENT))
+          try validate(sqlite3_bind_text(stmt, idx, value, -1, SQLITE_TRANSIENT))
         case let .blob(value):
           try value.withUnsafeBytes {
-            _ = try self.validate(
+            _ = try validate(
               sqlite3_bind_blob(stmt, idx, $0.baseAddress, Int32($0.count), SQLITE_TRANSIENT)
             )
           }
         }
       }
       let cols = sqlite3_column_count(stmt)
-      var rows: [[Datatype]] = []
-      while try self.validate(sqlite3_step(stmt)) == SQLITE_ROW {
+      var rows: [[DataType]] = []
+      while try validate(sqlite3_step(stmt)) == SQLITE_ROW {
         rows.append(
-          try (0 ..< cols).map { idx -> Datatype in
-            switch sqlite3_column_type(stmt, idx) {
+          (0 ..< cols).map { idx -> DataType in
+            let columnType = sqlite3_column_type(stmt, idx)
+            switch columnType {
             case SQLITE_BLOB:
               if let bytes = sqlite3_column_blob(stmt, idx) {
                 let count = Int(sqlite3_column_bytes(stmt, idx))
@@ -87,7 +88,7 @@ public final class SQLite {
             case SQLITE_TEXT:
               return .text(String(cString: sqlite3_column_text(stmt, idx)))
             default:
-              throw Error(description: "fatal")
+              fatalError("Unsupported column type: \(columnType)")
             }
           }
         )
@@ -97,13 +98,13 @@ public final class SQLite {
   }
 
   @discardableResult
-  public func execute(_ sql: String, _ bindings: Datatype...) throws -> [Row] {
+  public func execute(_ sql: String, _ bindings: DataType...) throws -> [Row] {
     try execute(sql, bindings)
   }
 
   public var lastInsertRowId: Int64 {
     queue.sync {
-      sqlite3_last_insert_rowid(self.handle)
+      sqlite3_last_insert_rowid(handle)
     }
   }
 
@@ -114,61 +115,12 @@ public final class SQLite {
     return code
   }
 
-  public enum Datatype: Equatable {
-    case blob(Data)
-    case integer(Int64)
-    case null
-    case real(Double)
-    case text(String)
-  }
-
-  public typealias Row = [Datatype]
-
   public struct Error: Swift.Error, Equatable {
     public var code: Int32?
     public var description: String
-  }
-}
-
-extension SQLite.Error {
-  init(code: Int32) {
-    self.code = code
-    description = String(cString: sqlite3_errstr(code))
-  }
-}
-
-extension SQLite.Datatype {
-  public var blobValue: Data? {
-    guard case let .blob(value) = self else {
-      return nil
+    init(code: Int32) {
+      self.code = code
+      description = String(cString: sqlite3_errstr(code))
     }
-
-    return value
   }
-
-  public var integerValue: Int64? {
-    guard case let .integer(value) = self else {
-      return nil
-    }
-
-    return value
-  }
-
-  public var realValue: Double? {
-    guard case let .real(value) = self else {
-      return nil
-    }
-
-    return value
-  }
-
-  public var textValue: String? {
-    guard case let .text(value) = self else {
-      return nil
-    }
-
-    return value
-  }
-
-  public var isNull: Bool { self == .null }
 }
